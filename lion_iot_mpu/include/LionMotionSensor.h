@@ -11,7 +11,7 @@
 
 typedef void (*waitForCallback)();
 
-class MPU {
+class LionMotionSensor {
 private:
     float offsetPitch = 0.0f;
     float offsetRoll = 0.0f;
@@ -25,11 +25,17 @@ private:
     float calculateYaw(float roll, float pitch);
 
 public:
+    struct LionMotionSensorData {
+        float pitch = 0.0;
+        float roll = 0.0;
+        float yaw = 0.0;
+    };
+    
     void setPitchOffset(float offset);
     void setRollOffset(float offset);
     void setYawOffset(float offset);
     void begin();
-    void loop();
+    void loop(void(*onSensorDataCallback)(LionMotionSensorData));
 };
 
 #endif
