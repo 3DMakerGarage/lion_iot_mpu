@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <Lion.h>
 #include <LionMotionSensor.h>
+#include <Servo.h>
 
 #define MODE_INITIALIZING 1
 #define MODE_CALIBRATING 2
@@ -14,6 +15,8 @@ int calibrationCounter = CALIBRATION_TIME_SECS;
 unsigned long lastCalibrationLoopTime;
 float pitchOffset = 0.0;
 float currentPitch = 0.0;
+Servo servoRight;
+Servo servoLeft;
 
 void printInitializingDisplay() {
   lion.display()->clear();
@@ -32,12 +35,19 @@ void printRunningDisplay() {
   lion.display()->writeAlignedText(20, 3, CENTER, "RUN!!!");
 }
 
-void setup() {
-  Serial.begin(115200);
-  lion.begin();
-  printInitializingDisplay();
+void stop() {
+  servoLeft.write(90);
+  servoRight.write(90);
+}
 
-  motionSensor.begin();
+void moveForward() {
+  servoLeft.write(180);
+  servoRight.write(0);
+}
+
+void moveRear() {
+  servoLeft.write(0);
+  servoRight.write(180);
 }
 
 void onMotionSenserData(LionMotionSensor::LionMotionSensorData sensorData) {
@@ -52,6 +62,7 @@ void onMotionSenserData(LionMotionSensor::LionMotionSensorData sensorData) {
     Serial.println(sensorData.pitch);
   } else if (robotStatus == MODE_RUNNING) {
     currentPitch = roundf(sensorData.pitch);
+    //Serial.println(currentPitch);
   }
 }
 
@@ -92,12 +103,30 @@ void calibrationLoop() {
 void runningLoop() {
   Serial.println(currentPitch);
   if (currentPitch < 0.0) {
-    //REAR MOTORS
+    Serial.println("Moving Rear...");
+    moveRear();
   } else if (currentPitch > 0.0) {
-    //FORWARD MOTORS
+    Serial.println("Moving Forward...");
+    moveForward();
   } else if (currentPitch == 0.0) {
-    //STOP MOTORS
+    Serial.println("Stoping...");
+    stop();
   }
+}
+
+void setup() {
+  pinMode(PORT_D, OUTPUT);
+  pinMode(PORT_E, OUTPUT);
+
+  Serial.begin(115200);
+  lion.begin();
+  printInitializingDisplay();
+
+  servoRight.attach(PORT_D);
+  servoLeft.attach(PORT_E);
+  stop();
+
+  motionSensor.begin();
 }
 
 void loop() {
