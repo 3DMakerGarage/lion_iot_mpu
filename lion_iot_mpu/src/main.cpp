@@ -2,11 +2,13 @@
 #include <Lion.h>
 #include <LionMotionSensor.h>
 #include <Servo.h>
+#include <PID_v1.h>
 
 #define MODE_INITIALIZING 1
 #define MODE_CALIBRATING 2
 #define MODE_RUNNING 3
-#define CALIBRATION_TIME_SECS 10
+#define CALIBRATION_TIME_SECS 5
+#define ENABLE_MOTORS
 
 Lion lion = Lion();
 LionMotionSensor motionSensor = LionMotionSensor();
@@ -17,6 +19,14 @@ float pitchOffset = 0.0;
 float currentPitch = 0.0;
 Servo servoRight;
 Servo servoLeft;
+
+//PID Control
+double pidInput, pidOutput;
+double pidSetpoint = 0.0;
+double kp = 15.0;
+double ki = 0.0;
+double kd = 0.0;
+PID pid(&pidInput, &pidOutput, &pidSetpoint, kp, ki, kd, DIRECT);
 
 void printInitializingDisplay() {
   lion.display()->clear();
@@ -36,18 +46,28 @@ void printRunningDisplay() {
 }
 
 void stop() {
-  servoLeft.write(90);
-  servoRight.write(90);
+  #ifdef ENABLE_MOTORS
+    servoLeft.write(90);
+    servoRight.write(90);
+  #endif
 }
 
-void moveForward() {
-  servoLeft.write(180);
-  servoRight.write(0);
+void moveForward(int speed) {
+  #ifdef ENABLE_MOTORS
+    int leftSpeed = 90 - speed;
+    int rightSpeed = 90 + speed;
+    servoLeft.write(leftSpeed);
+    servoRight.write(rightSpeed);
+  #endif
 }
 
-void moveRear() {
-  servoLeft.write(0);
-  servoRight.write(180);
+void moveRear(int speed) {
+  #ifdef ENABLE_MOTORS
+    int leftSpeed = 90 + speed;
+    int rightSpeed = 90 - speed;
+    servoLeft.write(leftSpeed);
+    servoRight.write(rightSpeed);
+  #endif
 }
 
 void onMotionSenserData(LionMotionSensor::LionMotionSensorData sensorData) {
@@ -59,10 +79,8 @@ void onMotionSenserData(LionMotionSensor::LionMotionSensorData sensorData) {
     } else {
       pitchOffset = sensorData.pitch;
     }
-    Serial.println(sensorData.pitch);
   } else if (robotStatus == MODE_RUNNING) {
     currentPitch = roundf(sensorData.pitch);
-    //Serial.println(currentPitch);
   }
 }
 
@@ -75,8 +93,6 @@ void onTouchButtonEvent(TouchButtons::BUTTON button, TouchButtons::BUTTON_EVENT 
 }
 
 void setCalibration() {
-  Serial.println("Robot Calibration:");
-  Serial.println("\tPitch. Offset: " + (String)pitchOffset);
   motionSensor.setPitchOffset(pitchOffset);
 }
 
@@ -101,31 +117,36 @@ void calibrationLoop() {
 }
 
 void runningLoop() {
-  Serial.println(currentPitch);
-  if (currentPitch < 0.0) {
-    Serial.println("Moving Rear...");
-    moveRear();
-  } else if (currentPitch > 0.0) {
-    Serial.println("Moving Forward...");
-    moveForward();
-  } else if (currentPitch == 0.0) {
-    Serial.println("Stoping...");
+  pidInput = currentPitch;
+  pid.Compute();
+  Serial.println((String)pidOutput);
+  
+  unsigned int speed = abs(int(trunc(pidOutput)));
+  if (pidOutput < 0.0) {
+    moveRear(speed);
+  } else if (pidOutput > 0.0) {
+    moveForward(speed);
+  } else if (pidOutput == 0.0) {
     stop();
   }
 }
 
-void setup() {
-  pinMode(PORT_D, OUTPUT);
-  pinMode(PORT_E, OUTPUT);
+void setupPID() {
+  pid.SetMode(AUTOMATIC);
+  pid.SetSampleTime(10);
+  pid.SetOutputLimits(-90, 90);
+}
 
+void setup() {
   Serial.begin(115200);
   lion.begin();
   printInitializingDisplay();
 
   servoRight.attach(PORT_D);
-  servoLeft.attach(PORT_E);
+  servoLeft.attach(PORT_C);
   stop();
 
+  setupPID();
   motionSensor.begin();
 }
 

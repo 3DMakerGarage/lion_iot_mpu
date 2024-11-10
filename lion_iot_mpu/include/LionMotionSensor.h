@@ -7,7 +7,7 @@
 #include <Adafruit_Sensor.h>
 
 #define MPU_SENSOR_ADDRESS 0x68
-#define MPU_SENSOR_SAMPLING_TIME 100
+#define MPU_SENSOR_SAMPLING_TIME 10
 
 typedef void (*waitForCallback)();
 
