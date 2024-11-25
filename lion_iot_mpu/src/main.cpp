@@ -4,96 +4,235 @@
 #include <Servo.h>
 #include <PID_v1.h>
 
+Lion lion = Lion();
+LionMotionSensor motionSensor = LionMotionSensor();
+
+#define CALIBRATION_TIME_SECS 5
+int calibrationCounter = CALIBRATION_TIME_SECS;
+
 #define MODE_INITIALIZING 1
 #define MODE_CALIBRATING 2
 #define MODE_RUNNING 3
-#define CALIBRATION_TIME_SECS 5
-#define ENABLE_MOTORS
-
-Lion lion = Lion();
-LionMotionSensor motionSensor = LionMotionSensor();
+#define MODE_SETUP 4
 int robotStatus = MODE_INITIALIZING;
-int calibrationCounter = CALIBRATION_TIME_SECS;
+
 unsigned long lastCalibrationLoopTime;
-float pitchOffset = 0.0;
-float currentPitch = 0.0;
+double kp = 30.0;
+double ki = 2.0;
+double kd = 0.0;
+double setPoint = 0.0;
+double robotPitch = 0.0;
+
+#define SETUP_P 1
+#define SETUP_I 2
+#define SETUP_D 3
+#define SETUP_A 4
+int setupMode = SETUP_P;
+double setupFieldOffset = 1.0;
+double* setupField = &kp;
+String setupFieldName = "kP";
+
+double pidOutput;  
+PID pid = PID(&robotPitch, &pidOutput, &setPoint, kp, ki, kd, DIRECT);
+
 Servo servoRight;
 Servo servoLeft;
-
-//PID Control
-double pidInput, pidOutput;
-double pidSetpoint = 0.0;
-double kp = 15.0;
-double ki = 0.0;
-double kd = 0.0;
-PID pid(&pidInput, &pidOutput, &pidSetpoint, kp, ki, kd, DIRECT);
 
 void printInitializingDisplay() {
   lion.display()->clear();
   lion.display()->writeAlignedText(15, 2, CENTER, "CALIBRATE");
   lion.display()->writeAlignedText(40, 1, CENTER, "Press A to Start");
+  lion.display()->draw();
 }
 
 void printCalibratingDisplay() {
   lion.display()->clear();
   lion.display()->writeAlignedText(13, 3, CENTER, (String)calibrationCounter);
-  lion.display()->writeAlignedText(50, 1, CENTER, "Calibrating...");
+  lion.display()->writeAlignedText(50, 1, CENTER, "(" + (String)setPoint + ") Calibrating...");
+  lion.display()->draw();
 }
 
 void printRunningDisplay() {
   lion.display()->clear();
-  lion.display()->writeAlignedText(20, 3, CENTER, "RUN!!!");
+  lion.display()->writeAlignedText(22, 2, CENTER, (String)*setupField);
+  lion.display()->writeAlignedText(40, 2, CENTER, setupFieldName);
+  lion.display()->draw();
+}
+
+void printSetupDisplay() {
+  int activeRow = 0;
+  switch (setupMode) {
+    case SETUP_P:
+      activeRow = 5;
+      break;
+    case SETUP_I:
+      activeRow = 20;
+      break;
+    case SETUP_D:
+      activeRow = 35;
+      break;
+    case SETUP_A:
+      activeRow = 50;
+      break;
+  }
+  lion.display()->clear();
+  lion.display()->writeText(10, 5, 1, "P: " + (String)kp);
+  lion.display()->writeText(10, 20, 1, "I: " + (String)ki);
+  lion.display()->writeText(10, 35, 1, "D: " + (String)kd);
+  lion.display()->writeText(10, 50, 1, "A: " + (String)setPoint);
+  lion.display()->writeText(0, activeRow, 1, "*");
+  lion.display()->writeAlignedText(25, 2, RIGHT, (String)*setupField);
+  lion.display()->writeAlignedText(42, 1, RIGHT, "-/+ " + (String)setupFieldOffset);
+  lion.display()->draw();
 }
 
 void stop() {
-  #ifdef ENABLE_MOTORS
-    servoLeft.write(90);
-    servoRight.write(90);
-  #endif
+  servoLeft.write(90);
+  servoRight.write(90);
 }
 
 void moveForward(int speed) {
-  #ifdef ENABLE_MOTORS
-    int leftSpeed = 90 - speed;
-    int rightSpeed = 90 + speed;
-    servoLeft.write(leftSpeed);
-    servoRight.write(rightSpeed);
-  #endif
+  int leftSpeed = 90 - speed;
+  int rightSpeed = 90 + speed;
+  servoLeft.write(leftSpeed);
+  servoRight.write(rightSpeed);
 }
 
 void moveRear(int speed) {
-  #ifdef ENABLE_MOTORS
-    int leftSpeed = 90 + speed;
-    int rightSpeed = 90 - speed;
-    servoLeft.write(leftSpeed);
-    servoRight.write(rightSpeed);
-  #endif
+  int leftSpeed = 90 + speed;
+  int rightSpeed = 90 - speed;
+  servoLeft.write(leftSpeed);
+  servoRight.write(rightSpeed);
 }
 
 void onMotionSenserData(LionMotionSensor::LionMotionSensorData sensorData) {
-  if (robotStatus == MODE_CALIBRATING && calibrationCounter <= CALIBRATION_TIME_SECS - 2) {
-    if (pitchOffset != 0.0) {
-      if (abs(sensorData.pitch) > abs(pitchOffset)) {
-        pitchOffset = sensorData.pitch;  
-      }
-    } else {
-      pitchOffset = sensorData.pitch;
+  switch (robotStatus) {
+    case MODE_CALIBRATING:
+      setPoint = sensorData.pitch;
+      break;
+    case MODE_RUNNING:
+      robotPitch = sensorData.pitch;
+      break;
+  }
+}
+
+void initialisePID() {
+  pid = PID(&robotPitch, &pidOutput, &setPoint, kp, ki, kd, DIRECT);
+  pid.SetMode(AUTOMATIC);
+  pid.SetSampleTime(10);
+  pid.SetOutputLimits(-90, 90);
+}
+
+void increaseSetupField() { 
+  *setupField = *setupField + setupFieldOffset;
+}
+
+void decreaseSetupField() {
+  if (*setupField > 0.0) {
+    *setupField = *setupField - setupFieldOffset;
+  }
+}
+
+void setupSetupField(int mode) {
+  switch (mode) {
+    case SETUP_P:
+      setupFieldOffset = 1.0;
+      setupField = &kp;
+      setupFieldName = "kP";
+      break;
+    case SETUP_I:
+      setupFieldOffset = 0.1;
+      setupField = &ki;
+      setupFieldName = "kI";
+      break;
+    case SETUP_D:
+      setupFieldOffset = 0.1;
+      setupField = &kd;
+      setupFieldName = "kD";
+      break;
+    case SETUP_A:
+      setupFieldOffset = 0.1;
+      setupField = &setPoint;
+      setupFieldName = "SetPoint";
+      break;
+  }
+}
+
+void onTouchButtonEventForInitializing(TouchButtons::BUTTON button, TouchButtons::BUTTON_EVENT event) {
+  if (button == TouchButtons::A && event == TouchButtons::PRESSED) {
+      robotStatus = MODE_CALIBRATING;
+  }
+}
+
+void onTouchButtonEventForCalibration(TouchButtons::BUTTON button, TouchButtons::BUTTON_EVENT event) { }
+
+void onTouchButtonEventForRunning(TouchButtons::BUTTON button, TouchButtons::BUTTON_EVENT event) { 
+  if (event == TouchButtons::BUTTON_EVENT::PRESSED) {
+    switch (button) {
+      case TouchButtons::BUTTON::A: 
+        decreaseSetupField();
+        initialisePID();
+        break;
+      case TouchButtons::BUTTON::B:
+        increaseSetupField();
+        initialisePID(); 
+        break;
     }
-  } else if (robotStatus == MODE_RUNNING) {
-    currentPitch = roundf(sensorData.pitch);
+    printRunningDisplay();
+  } else if (event == TouchButtons::BUTTON_EVENT::LONG_PRESSED) {
+    stop();
+    robotStatus = MODE_SETUP;
+  }
+}
+
+void onTouchButtonEventForSetup(TouchButtons::BUTTON button, TouchButtons::BUTTON_EVENT event) {
+  switch (event) {
+    case TouchButtons::BUTTON_EVENT::PRESSED:
+      switch (button) {
+        case TouchButtons::BUTTON::A:
+          decreaseSetupField();
+          initialisePID();
+          break;
+        case TouchButtons::BUTTON::B:
+          increaseSetupField();
+          initialisePID();
+          break;
+      }
+      break;
+    case TouchButtons::BUTTON_EVENT::LONG_PRESSED:
+      switch (button) {
+        case TouchButtons::BUTTON::A:
+          if (setupMode < SETUP_A) {
+            setupMode++;
+          } else {
+            setupMode = SETUP_P;
+          }
+          setupSetupField(setupMode);
+          break;
+        case TouchButtons::BUTTON::B:
+          robotStatus = MODE_RUNNING;
+          printRunningDisplay();
+          break;
+      }
+      break;
   }
 }
 
 void onTouchButtonEvent(TouchButtons::BUTTON button, TouchButtons::BUTTON_EVENT event) {
-  if (button == TouchButtons::A && event == TouchButtons::PRESSED) {
-    if (robotStatus == MODE_INITIALIZING) {
-      robotStatus = MODE_CALIBRATING;
-    }
+  switch (robotStatus) {
+    case MODE_INITIALIZING:
+      onTouchButtonEventForInitializing(button, event);
+      break;
+    case MODE_CALIBRATING:
+      onTouchButtonEventForCalibration(button, event);
+      break;
+    case MODE_RUNNING:
+      onTouchButtonEventForRunning(button, event);
+      break;
+    case MODE_SETUP:
+      onTouchButtonEventForSetup(button, event);
+      break;
   }
-}
-
-void setCalibration() {
-  motionSensor.setPitchOffset(pitchOffset);
 }
 
 void calibrationLoop() {
@@ -106,52 +245,52 @@ void calibrationLoop() {
       printCalibratingDisplay();
       calibrationCounter--;
     } else {
+      robotStatus = MODE_RUNNING;
+      initialisePID();
       printRunningDisplay();
-      setCalibration();
       calibrationCounter = CALIBRATION_TIME_SECS;
       lastCalibrationLoopTime = 0;
-      robotStatus = MODE_RUNNING;
     }
     lastCalibrationLoopTime = currentTime;
   }
 }
 
 void runningLoop() {
-  pidInput = currentPitch;
-  pid.Compute();
-  Serial.println((String)pidOutput);
-  
-  unsigned int speed = abs(int(trunc(pidOutput)));
-  if (pidOutput < 0.0) {
-    moveRear(speed);
-  } else if (pidOutput > 0.0) {
-    moveForward(speed);
-  } else if (pidOutput == 0.0) {
-    stop();
+  if (pid.Compute()) {
+    unsigned int speed = abs(int(trunc(pidOutput)));
+    if (robotPitch < 0.0) {
+      moveForward(speed);
+    } else if (robotPitch > 0.0) {
+      moveRear(speed);
+    } else if (robotPitch == 0.0) {
+      stop();
+    }
   }
 }
 
-void setupPID() {
-  pid.SetMode(AUTOMATIC);
-  pid.SetSampleTime(10);
-  pid.SetOutputLimits(-90, 90);
+void setupLoop() {
+  printSetupDisplay();
+}
+
+void attachMotors() {
+  servoRight.attach(PORT_D);
+  servoLeft.attach(PORT_E);
+  stop();
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(9600);
   lion.begin();
   printInitializingDisplay();
 
-  servoRight.attach(PORT_D);
-  servoLeft.attach(PORT_C);
-  stop();
+  attachMotors();
 
-  setupPID();
   motionSensor.begin();
 }
 
 void loop() {
   lion.touchButtons()->loop(onTouchButtonEvent);
+
   motionSensor.loop(onMotionSenserData);
 
   switch (robotStatus) {
@@ -162,6 +301,9 @@ void loop() {
       break;
     case MODE_RUNNING:
       runningLoop();
+      break;
+    case MODE_SETUP:
+      setupLoop();
       break;
   }
 }
