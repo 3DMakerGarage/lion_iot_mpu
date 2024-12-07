@@ -17,18 +17,19 @@ int calibrationCounter = CALIBRATION_TIME_SECS;
 int robotStatus = MODE_INITIALIZING;
 
 unsigned long lastCalibrationLoopTime;
-double kp = 30.0;
-double ki = 2.0;
-double kd = 0.0;
-double setPoint = 0.0;
-double robotPitch = 0.0;
+double kp = 12.5;
+double ki = 0.8;
+double kd = 0.05;
+double setPoint = 3.15;
+double robotPitch = 0.00;
+double robotPitchMaxPitchThreshold = 40.0; //Robot´s pitch value threshold to stop.
 
 #define SETUP_P 1
 #define SETUP_I 2
 #define SETUP_D 3
 #define SETUP_A 4
 int setupMode = SETUP_P;
-double setupFieldOffset = 1.0;
+double setupFieldOffset = 0.1;
 double* setupField = &kp;
 String setupFieldName = "kP";
 
@@ -40,8 +41,8 @@ Servo servoLeft;
 
 void printInitializingDisplay() {
   lion.display()->clear();
-  lion.display()->writeAlignedText(15, 2, CENTER, "CALIBRATE");
-  lion.display()->writeAlignedText(40, 1, CENTER, "Press A to Start");
+  lion.display()->drawLogo();
+  lion.display()->writeAlignedText(55, 1, CENTER, "Press A to Start");
   lion.display()->draw();
 }
 
@@ -76,10 +77,10 @@ void printSetupDisplay() {
       break;
   }
   lion.display()->clear();
-  lion.display()->writeText(10, 5, 1, "P: " + (String)kp);
-  lion.display()->writeText(10, 20, 1, "I: " + (String)ki);
-  lion.display()->writeText(10, 35, 1, "D: " + (String)kd);
-  lion.display()->writeText(10, 50, 1, "A: " + (String)setPoint);
+  lion.display()->writeText(10, 5, 1, "kP: " + (String)kp);
+  lion.display()->writeText(10, 20, 1, "kI: " + (String)ki);
+  lion.display()->writeText(10, 35, 1, "kD: " + (String)kd);
+  lion.display()->writeText(10, 50, 1, "SP: " + (String)setPoint);
   lion.display()->writeText(0, activeRow, 1, "*");
   lion.display()->writeAlignedText(25, 2, RIGHT, (String)*setupField);
   lion.display()->writeAlignedText(42, 1, RIGHT, "-/+ " + (String)setupFieldOffset);
@@ -92,23 +93,29 @@ void stop() {
 }
 
 void moveForward(int speed) {
-  int leftSpeed = 90 - speed;
-  int rightSpeed = 90 + speed;
-  servoLeft.write(leftSpeed);
-  servoRight.write(rightSpeed);
-}
-
-void moveRear(int speed) {
   int leftSpeed = 90 + speed;
   int rightSpeed = 90 - speed;
   servoLeft.write(leftSpeed);
   servoRight.write(rightSpeed);
 }
 
+void moveRear(int speed) {
+  int leftSpeed = 90 - speed;
+  int rightSpeed = 90 + speed;
+  servoLeft.write(leftSpeed);
+  servoRight.write(rightSpeed);
+}
+
+void attachMotors() {
+  servoRight.attach(PORT_C);
+  servoLeft.attach(PORT_D);
+  stop();
+}
+
 void onMotionSenserData(LionMotionSensor::LionMotionSensorData sensorData) {
   switch (robotStatus) {
     case MODE_CALIBRATING:
-      setPoint = sensorData.pitch;
+      //setPoint = sensorData.pitch;
       break;
     case MODE_RUNNING:
       robotPitch = sensorData.pitch;
@@ -128,15 +135,13 @@ void increaseSetupField() {
 }
 
 void decreaseSetupField() {
-  if (*setupField > 0.0) {
-    *setupField = *setupField - setupFieldOffset;
-  }
+  *setupField = *setupField - setupFieldOffset;
 }
 
 void setupSetupField(int mode) {
   switch (mode) {
     case SETUP_P:
-      setupFieldOffset = 1.0;
+      setupFieldOffset = 0.1;
       setupField = &kp;
       setupFieldName = "kP";
       break;
@@ -146,14 +151,14 @@ void setupSetupField(int mode) {
       setupFieldName = "kI";
       break;
     case SETUP_D:
-      setupFieldOffset = 0.1;
+      setupFieldOffset = 0.01;
       setupField = &kd;
       setupFieldName = "kD";
       break;
     case SETUP_A:
-      setupFieldOffset = 0.1;
+      setupFieldOffset = 0.01;
       setupField = &setPoint;
-      setupFieldName = "SetPoint";
+      setupFieldName = "setPoint";
       break;
   }
 }
@@ -255,27 +260,39 @@ void calibrationLoop() {
   }
 }
 
+boolean isRobotPitchWithinMaxRange() {
+  if (abs(robotPitch) <= robotPitchMaxPitchThreshold) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
+int calculateMotorsSpeed(double pidValue) {
+  return (int)pidValue;
+} 
+
 void runningLoop() {
-  if (pid.Compute()) {
-    unsigned int speed = abs(int(trunc(pidOutput)));
-    if (robotPitch < 0.0) {
-      moveForward(speed);
-    } else if (robotPitch > 0.0) {
-      moveRear(speed);
-    } else if (robotPitch == 0.0) {
+  if (isRobotPitchWithinMaxRange()) {
+    if (pid.Compute()) {
+      int speed = calculateMotorsSpeed(pidOutput);
+      if (speed < 0) {
+        moveForward(abs(speed));
+      } else if (speed > 0) {
+        moveRear(abs(speed));
+      } else {
+        stop();
+      }
+    } else {
       stop();
     }
+  } else {
+    stop();
   }
 }
 
 void setupLoop() {
   printSetupDisplay();
-}
-
-void attachMotors() {
-  servoRight.attach(PORT_D);
-  servoLeft.attach(PORT_E);
-  stop();
 }
 
 void setup() {
@@ -294,8 +311,6 @@ void loop() {
   motionSensor.loop(onMotionSenserData);
 
   switch (robotStatus) {
-    case MODE_INITIALIZING:
-      break;
     case MODE_CALIBRATING:
       calibrationLoop();
       break;
