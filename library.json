@@ -1,0 +1,26 @@
+{
+    "name": "Lion IoT Motion Sensor",
+    "version": "2.0.0",
+    "description": "Lion IoT Motion Sensor library. This library provides easy to use tools to work with motion sensors.",
+    "keywords": "lion, iot",
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/3DMakerGarage/lion_iot_mpu.git"
+    },
+    "authors": [
+      {
+        "name": "3D Maker Garage",
+        "email": "3dmakergarage@gmail.com",
+        "url": "https://lion-iot.com",
+        "maintainer": true
+      }
+    ],
+    "license": "Apache License, Version 2.0",
+    "frameworks": "arduino",
+    "platforms": ["espressif8266"],
+    "dependencies": {
+      "adafruit/Adafruit Unified Sensor": "^1.1.14",
+      "adafruit/Adafruit MPU6050": "^2.2.6",
+      "3dmakergarage/Lion IoT Core": "^2.0.0"
+    }
+  }
